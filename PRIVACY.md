@@ -11,4 +11,4 @@ Jump is a tab switcher. To show you your tabs, it reads the titles and addresses
 
 Favicons are loaded from Chrome's own local favicon cache, not from the websites themselves.
 
-Questions: shrawin@amnex.com
+Questions: devshrawin@gmail.com

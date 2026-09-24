@@ -33,6 +33,24 @@ function faviconFor(pageUrl) {
   return u.toString();
 }
 
+const PAGE_TEXT_CHARS = 20000;
+
+// Best-effort: restricted pages (chrome://, the Web Store, PDFs the viewer
+// blocks, etc.) throw here. That's fine, they just search title/url only.
+async function pageTextFor(tabId, url) {
+  if (!/^https?:\/\//i.test(url || "")) return "";
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (max) => (document.body ? document.body.innerText : "").slice(0, max),
+      args: [PAGE_TEXT_CHARS]
+    });
+    return result || "";
+  } catch (_) {
+    return "";
+  }
+}
+
 async function load() {
   const [tabs, closed, [current]] = await Promise.all([
     chrome.tabs.query({}),
@@ -58,6 +76,9 @@ async function load() {
       tag: multiWindow ? `Window ${windowNo.get(t.windowId)}` : ""
     }))
     .sort((a, b) => b.recency - a.recency);
+
+  // Injected fresh each time the popup opens, in parallel, so search covers page content too.
+  await Promise.all(open.map(async it => { it.pageText = await pageTextFor(it.id, it.url); }));
 
   const openUrls = new Set(tabs.map(t => t.url));
   const recent = closed
@@ -85,10 +106,10 @@ function filter(query) {
   }
   const scored = [];
   for (const it of items) {
-    const m = scoreItem(words, it.title, it.urlText);
+    const m = scoreItem(words, it.title, it.urlText, it.pageText);
     if (!m) continue;
     const penalty = it.kind === "closed" ? 15 : 0;
-    scored.push({ it, score: m.score - penalty, titleIdx: m.titleIdx, urlIdx: m.urlIdx });
+    scored.push({ it, score: m.score - penalty, titleIdx: m.titleIdx, urlIdx: m.urlIdx, pageHit: m.pageHit });
   }
   scored.sort((a, b) => b.score - a.score || b.it.recency - a.it.recency);
   return scored;
@@ -138,10 +159,11 @@ function rowFor(entry, i) {
   text.append(title, url);
 
   li.append(img, text);
-  if (it.tag) {
+  const tagText = [it.tag, entry.pageHit ? "In page" : ""].filter(Boolean).join(" · ");
+  if (tagText) {
     const tag = document.createElement("span");
     tag.className = "tag";
-    tag.textContent = it.tag;
+    tag.textContent = tagText;
     li.append(tag);
   }
 

@@ -4,7 +4,8 @@
   "short_name": "Jump",
   "version": "1.0.0",
   "description": "Find and switch to any open or recently closed tab by typing a few letters of its title or address.",
-  "permissions": ["tabs", "sessions", "favicon"],
+  "permissions": ["tabs", "sessions", "favicon", "scripting"],
+  "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Jump to a tab",

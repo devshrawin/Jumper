@@ -34,20 +34,41 @@ function faviconFor(pageUrl) {
 }
 
 const PAGE_TEXT_CHARS = 20000;
+const PAGE_TEXT_TIMEOUT_MS = 4000;
 
 // Best-effort: restricted pages (chrome://, the Web Store, PDFs the viewer
 // blocks, etc.) throw here. That's fine, they just search title/url only.
+// A hung tab can't stall the batch either — it just times out to "".
 async function pageTextFor(tabId, url) {
   if (!/^https?:\/\//i.test(url || "")) return "";
-  try {
-    const [{ result }] = await chrome.scripting.executeScript({
+  const timeout = new Promise(res => setTimeout(() => res(""), PAGE_TEXT_TIMEOUT_MS));
+  const exec = chrome.scripting
+    .executeScript({
       target: { tabId },
       func: (max) => (document.body ? document.body.innerText : "").slice(0, max),
       args: [PAGE_TEXT_CHARS]
+    })
+    .then(([{ result }]) => result || "")
+    .catch(() => "");
+  return Promise.race([exec, timeout]);
+}
+
+// Tabs we've already scanned this popup session, so retyping a query never
+// re-injects into the same tab twice. Cleared each time the popup opens.
+const pageTextLoaded = new Set();
+
+// Only scans page bodies once there's an actual query to look for — never on
+// popup open, and never for a tab you haven't searched against.
+function scanPageBodies(query) {
+  if (!query) return;
+  for (const it of items) {
+    if (it.kind !== "open" || pageTextLoaded.has(it.id)) continue;
+    pageTextLoaded.add(it.id);
+    pageTextFor(it.id, it.url).then(text => {
+      it.pageText = text;
+      // Ignore results for a query the user has since changed or cleared.
+      if ($q.value.trim().toLowerCase() === query.toLowerCase()) render();
     });
-    return result || "";
-  } catch (_) {
-    return "";
   }
 }
 
@@ -76,9 +97,6 @@ async function load() {
       tag: multiWindow ? `Window ${windowNo.get(t.windowId)}` : ""
     }))
     .sort((a, b) => b.recency - a.recency);
-
-  // Injected fresh each time the popup opens, in parallel, so search covers page content too.
-  await Promise.all(open.map(async it => { it.pageText = await pageTextFor(it.id, it.url); }));
 
   const openUrls = new Set(tabs.map(t => t.url));
   const recent = closed
@@ -192,12 +210,18 @@ function render() {
   });
 
   const openCount = items.filter(x => x.kind === "open").length + 1; // +1 for the current tab
-  $count.textContent = query ? `${view.length} found` : `${openCount} open`;
+  if (query) {
+    const scanning = items.some(it => it.kind === "open" && !pageTextLoaded.has(it.id));
+    $count.textContent = `${view.length} found${scanning ? " · scanning pages…" : ""}`;
+    scanPageBodies(query);
+  } else {
+    $count.textContent = `${openCount} open`;
+  }
 
   $empty.hidden = view.length > 0;
   if (!view.length) {
     $empty.textContent = query
-      ? `No tabs match "${query}". Try fewer letters, or part of the address.`
+      ? `No tabs match "${query}". Try fewer letters, part of the address, or wait a moment for page scanning to finish.`
       : "This is your only tab. Open a few more and Jump will list them here.";
   }
   syncSelection();

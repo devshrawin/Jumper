@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "name": "Jump: Fuzzy Tab Switcher",
   "short_name": "Jump",
-  "version": "1.0.0",
-  "description": "Find and switch to any open or recently closed tab by typing a few letters of its title or address.",
-  "permissions": ["tabs", "sessions", "favicon", "scripting"],
+  "version": "1.1.0",
+  "description": "Find and switch to any open, recently closed, or history tab by typing a few letters of its title, address, or even its page content.",
+  "permissions": ["tabs", "sessions", "favicon", "scripting", "storage", "history", "tabGroups"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html",

@@ -54,6 +54,7 @@ body {
 .text { min-width: 0; }
 .title, .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .title { font-weight: 500; }
+.pin { color: var(--accent); }
 .url { color: var(--muted); font-size: 12px; }
 mark {
   background: none; color: var(--accent); font-weight: 700;

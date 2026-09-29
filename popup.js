@@ -14,6 +14,7 @@ if (isMac) {
   document.getElementById("muteKey").textContent = "⌘M";
   document.getElementById("copyKey").textContent = "⌘⇧U";
   document.getElementById("dupKey").textContent = "⌘⇧D";
+  document.getElementById("hideKey").textContent = "⌘⇧X";
 }
 
 let items = [];     // everything we could show
@@ -91,6 +92,21 @@ async function savePinned() {
 
 let pinnedUrls = new Set();
 
+// URLs the user removed from Jump's list. Only hides them here — the tab stays
+// open and Chrome's own history is never touched.
+const HIDDEN_MAX = 1000;
+let hiddenUrls = new Set();
+let lastRemoved = null; // { url, removed: [{ it, index }] } for Ctrl+Z
+
+async function loadHidden() {
+  const { hidden } = await chrome.storage.local.get("hidden");
+  return new Set(hidden || []);
+}
+
+async function saveHidden() {
+  await chrome.storage.local.set({ hidden: [...hiddenUrls].slice(-HIDDEN_MAX) });
+}
+
 function capitalize(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
 
 // Recomputes how many other open tabs share each open tab's URL, so the
@@ -102,14 +118,16 @@ function refreshDupCounts() {
 }
 
 async function load() {
-  const [tabs, closed, [current], pinned, historyRaw] = await Promise.all([
+  const [tabs, closed, [current], pinned, hidden, historyRaw] = await Promise.all([
     chrome.tabs.query({}),
     chrome.sessions.getRecentlyClosed({ maxResults: 25 }),
     chrome.tabs.query({ active: true, currentWindow: true }),
     loadPinned(),
+    loadHidden(),
     chrome.history.search({ text: "", maxResults: 200, startTime: Date.now() - HISTORY_WINDOW_MS })
   ]);
   pinnedUrls = pinned;
+  hiddenUrls = hidden;
 
   // Number windows in the order Chrome reports them, so tags read "Window 2".
   const windowNo = new Map();
@@ -125,7 +143,7 @@ async function load() {
   }));
 
   const open = tabs
-    .filter(t => !current || t.id !== current.id)
+    .filter(t => (!current || t.id !== current.id) && !hiddenUrls.has(t.url))
     .map(t => {
       const group = groupInfo.get(t.groupId);
       return {
@@ -145,7 +163,7 @@ async function load() {
 
   const openUrls = new Set(tabs.map(t => t.url));
   const recent = closed
-    .filter(s => s.tab && s.tab.url && !s.tab.url.startsWith("chrome://newtab") && !openUrls.has(s.tab.url))
+    .filter(s => s.tab && s.tab.url && !s.tab.url.startsWith("chrome://newtab") && !openUrls.has(s.tab.url) && !hiddenUrls.has(s.tab.url))
     .map(s => ({
       kind: "closed",
       sessionId: s.tab.sessionId,
@@ -158,7 +176,7 @@ async function load() {
 
   const closedUrls = new Set(recent.map(r => r.url));
   const history = historyRaw
-    .filter(h => h.url && !openUrls.has(h.url) && !closedUrls.has(h.url))
+    .filter(h => h.url && !openUrls.has(h.url) && !closedUrls.has(h.url) && !hiddenUrls.has(h.url))
     .map(h => ({
       kind: "history",
       title: h.title || displayUrl(h.url),
@@ -213,6 +231,29 @@ function highlighted(el, text, idx) {
   flush();
 }
 
+const ICONS = {
+  close: "M6 6l12 12M18 6L6 18",
+  hide: "M5 12h14"
+};
+
+function actionButton(kind, label, onClick) {
+  const b = document.createElement("button");
+  b.className = "act act-" + kind;
+  b.type = "button";
+  b.tabIndex = -1;
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", ICONS[kind]);
+  svg.append(path);
+  b.append(svg);
+  b.addEventListener("click", e => { e.stopPropagation(); onClick(); });
+  return b;
+}
+
 function rowFor(entry, i) {
   const { it } = entry;
   const li = document.createElement("li");
@@ -255,6 +296,12 @@ function rowFor(entry, i) {
     tag.textContent = tagText;
     li.append(tag);
   }
+
+  const actions = document.createElement("span");
+  actions.className = "actions";
+  if (it.kind === "open") actions.append(actionButton("close", "Close tab", () => closeEntry(entry)));
+  actions.append(actionButton("hide", "Remove from list", () => hideEntry(entry)));
+  li.append(actions);
 
   li.addEventListener("mousemove", () => { if (sel !== i) select(i); });
   li.addEventListener("click", () => activate(view[i]));
@@ -337,11 +384,37 @@ async function activate(entry) {
   }
 }
 
-async function closeSelected() {
-  const entry = view[sel];
+async function closeEntry(entry) {
   if (!entry || entry.it.kind !== "open") return;
   await chrome.tabs.remove(entry.it.id);
   items = items.filter(x => x !== entry.it);
+  refreshDupCounts();
+  render();
+}
+
+// Hides every row with this URL from Jump (open tabs stay open). Ctrl+Z undoes.
+async function hideEntry(entry) {
+  if (!entry) return;
+  const url = entry.it.url;
+  hiddenUrls.delete(url); // re-add at the end so the cap drops the oldest
+  hiddenUrls.add(url);
+  await saveHidden();
+  const removed = [];
+  items.forEach((it, index) => { if (it.url === url) removed.push({ it, index }); });
+  lastRemoved = { url, removed };
+  items = items.filter(x => x.url !== url);
+  refreshDupCounts();
+  render();
+  $count.textContent = `Removed from list · ${isMac ? "⌘Z" : "Ctrl+Z"} to undo`;
+}
+
+async function undoHide() {
+  if (!lastRemoved) return;
+  const { url, removed } = lastRemoved;
+  lastRemoved = null;
+  hiddenUrls.delete(url);
+  await saveHidden();
+  for (const { it, index } of removed) items.splice(Math.min(index, items.length), 0, it);
   refreshDupCounts();
   render();
 }
@@ -400,7 +473,9 @@ $q.addEventListener("keydown", e => {
   if (e.key === "ArrowDown" || (ctrl && !e.shiftKey && key === "n")) { e.preventDefault(); select(sel + 1); }
   else if (e.key === "ArrowUp" || (ctrl && !e.shiftKey && key === "p")) { e.preventDefault(); select(sel - 1); }
   else if (e.key === "Enter") { e.preventDefault(); activate(entry); }
-  else if ((ctrl && e.key === "Delete") || (e.metaKey && e.key === "Backspace")) { e.preventDefault(); closeSelected(); }
+  else if ((ctrl && e.key === "Delete") || (e.metaKey && e.key === "Backspace")) { e.preventDefault(); closeEntry(entry); }
+  else if (ctrl && e.shiftKey && key === "x") { e.preventDefault(); hideEntry(entry); }
+  else if (ctrl && !e.shiftKey && key === "z" && lastRemoved) { e.preventDefault(); undoHide(); }
   else if (ctrl && e.shiftKey && key === "p") { e.preventDefault(); togglePin(entry); }
   else if (ctrl && !e.shiftKey && key === "m") { e.preventDefault(); toggleMute(entry); }
   else if (ctrl && e.shiftKey && key === "u") { e.preventDefault(); copyUrl(entry); }

@@ -25,7 +25,8 @@ No exact spelling. No clicking through 40 tabs. No accounts, no cloud, no tracki
 ### Control
 - **Mute toggle** — `Ctrl+M` silences (or unsilences) the tab blasting audio, without switching to it
 - **Copy URL** — `Ctrl+Shift+U` grabs the selected tab's real URL to your clipboard, no navigation needed
-- **Close without switching** — `Ctrl+Delete` closes the selected tab and stays right where you are
+- **Close without switching** — `Ctrl+Delete` (or the × button on a row) closes the selected tab and stays right where you are
+- **Remove from list** — `Ctrl+Shift+X` (or the − button on a row) hides that URL from Jump for good — open tabs stay open, Chrome's own history is untouched; `Ctrl+Z` undoes
 - **Reopen anything** — recently closed tabs and history results reopen with one `Enter`, same as any live tab
 - **Quick back** — `Enter` on an empty search box jumps straight to your previous tab
 
@@ -35,7 +36,9 @@ No exact spelling. No clicking through 40 tabs. No accounts, no cloud, no tracki
 |---|---|
 | `↑` `↓` (or `Ctrl+P`/`Ctrl+N`) | Move selection |
 | `Enter` | Switch / reopen selected |
-| `Ctrl+Delete` (`Cmd+Backspace`) | Close selected tab |
+| `Ctrl+Delete` (`Cmd+Backspace`) or × | Close selected tab |
+| `Ctrl+Shift+X` (`Cmd+Shift+X`) or − | Remove selected URL from Jump's list |
+| `Ctrl+Z` (`Cmd+Z`) | Undo last removal |
 | `Ctrl+Shift+P` (`Cmd+Shift+P`) | Pin / unpin selected tab |
 | `Ctrl+M` (`Cmd+M`) | Mute / unmute selected tab |
 | `Ctrl+Shift+U` (`Cmd+Shift+U`) | Copy selected tab's URL |
@@ -72,7 +75,7 @@ Every space-separated word in your query has to match *something* — title, URL
 | `sessions` | List and restore recently closed tabs |
 | `favicon` | Show each tab's icon from Chrome's local favicon cache (never fetched from the live site) |
 | `scripting` + `host_permissions: <all_urls>` | Read a tab's visible body text, only once you actually search |
-| `storage` | Persist your pinned tabs across restarts |
+| `storage` | Persist your pinned tabs and removed-from-list entries across restarts |
 | `history` | Fold in browsing history so you can jump back to a page you closed weeks ago |
 | `tabGroups` | Read a tab group's name/color for its tag |
 
